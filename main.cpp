@@ -9,20 +9,31 @@
 #include <thread>
 #include <iostream>
 
+enum VisualizerMode
+{
+    WAVEFORM_OSCILLOSCOPE = 0,
+    FREQUENCY_BAR_GRAPH,
+    VIS_MODE_COUNT,
+};
+
 std::pair<lab::AudioStreamConfig, lab::AudioStreamConfig> GetDefaultAudioDeviceConfiguration(const bool with_input = true);
 
 int main(int argc, char** argv) {
+    std::string sndfileName;
     if (argc < 2) {
         printf("No input file.");
         return EXIT_FAILURE;
     }
+    sndfileName = argv[1];
+
+    VisualizerMode curremtMode = VisualizerMode::WAVEFORM_OSCILLOSCOPE;
 
     log_set_level(LOGLEVEL_ERROR);
     const auto defaultAudioDeviceConfigurations = GetDefaultAudioDeviceConfiguration();
     auto context = lab::MakeRealtimeAudioContext(defaultAudioDeviceConfigurations.second, defaultAudioDeviceConfigurations.first);
     lab::AudioContext& ac = *context.get();
 
-    auto audioClipBus = lab::MakeBusFromFile(argv[1], false);
+    auto audioClipBus = lab::MakeBusFromFile(sndfileName, false);
     auto audioClipNode = std::make_shared<lab::SampledAudioNode>(ac);
     {
         lab::ContextRenderLock r(context.get(), "audioNode setBus");
@@ -43,19 +54,90 @@ int main(int argc, char** argv) {
 
     auto bufferLength = analyserNode->frequencyBinCount();
     std::vector<uint8_t> wave(1024);
-    while (true) {
-        analyserNode->getByteTimeDomainData(wave);
-        for (int i = 0; i < bufferLength; i++) {
-            std::cout << (wave[i] / 128.0f);
+
+
+    // main UI loop
+    using namespace ftxui;
+    const int CanvesWidth = 200;
+    const int CanvesHeight = 50;
+
+    auto board_renderer = CatchEvent(Renderer([&] {
+        auto c = Canvas(CanvesWidth, CanvesHeight);
+
+        c.DrawText(0, 0, sndfileName, [](Pixel& p) {
+            p.foreground_color = Color::Red;
+            p.underlined = true;
+        });
+
+
+        if (curremtMode == VisualizerMode::WAVEFORM_OSCILLOSCOPE)
+        {
+            const float sliceWidth = CanvesWidth / (float)bufferLength;
+            analyserNode->getByteTimeDomainData(wave);
+
+            int x1 = 0;
+            int y1 = CanvesHeight / 2;
+            int x2 = x1 + sliceWidth;
+            int y2 = (wave[0] / 128.0f) * (CanvesHeight / 2);
+            c.DrawPointLine(x1, y1, x2, y2, Color::Green);
+            for (int i = 1; i < bufferLength; i++) {
+                x1 = x2;
+                y1 = y2;
+                x2 = i * sliceWidth;
+                y2 = (wave[i] / 128.0f) * (CanvesHeight / 2);
+                c.DrawPointLine(x1, y1, x2, y2, Color::Green);
+            }
         }
-        std::cout << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds (33));
-    }
 
-    std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    std::cout << "Press any key to stop play!" << std::endl;
-    getchar();
+
+        return window(text("Audio Visualizer"), canvas(c));
+    }), [&](const Event &e) {
+        if (e == Event::ArrowLeft) {
+            int curmode = (int)curremtMode;
+            curmode -= 1;
+            if (curmode < 0) {
+                curmode = (int)VisualizerMode::VIS_MODE_COUNT - 1;
+            }
+            curremtMode = (VisualizerMode)curmode;
+        }
+        if (e == Event::ArrowRight) {
+            int curmode = (int)curremtMode;
+            curmode += 1;
+            if (curmode >= (int)VisualizerMode::VIS_MODE_COUNT) {
+                curmode = 0;
+            }
+            curremtMode = (VisualizerMode)curmode;
+        }
+        return false;
+    });
+
+    auto screen = ScreenInteractive::FitComponent();
+    std::atomic<bool> refresh_ui_continue = true;
+    std::thread refresh_ui([&] {
+        while (refresh_ui_continue) {
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(1.0s / 60.0);// NOLINT magic numbers
+            screen.PostEvent(Event::Custom);
+        }
+    });
+    screen.Loop(board_renderer);
+    refresh_ui_continue = false;
+    refresh_ui.join();
+
+    //    while (true) {
+//        analyserNode->getByteTimeDomainData(wave);
+//        for (int i = 0; i < bufferLength; i++) {
+//            std::cout << (wave[i] / 128.0f);
+//        }
+//        std::cout << std::endl;
+//        std::this_thread::sleep_for(std::chrono::milliseconds (33));
+//    }
+//
+//    std::this_thread::sleep_for(std::chrono::seconds(1));
+//
+//    std::cout << "Press any key to stop play!" << std::endl;
+//    getchar();
 
     return 0;
 }

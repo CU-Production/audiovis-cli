@@ -16,8 +16,8 @@
 
 using namespace std;
 
-//#define ASN_PRINT(...)
-#define ASN_PRINT(a) printf(a)
+#define ASN_PRINT(...)
+//#define ASN_PRINT(a) printf(a)
 
 
 
