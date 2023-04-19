@@ -1,9 +1,66 @@
 #include "LabSound/LabSound.h"
-
+#include "ftxui/component/component.hpp"
+#include "ftxui/component/screen_interactive.hpp"
+#include "ftxui/dom/canvas.hpp"
+#include "ftxui/dom/elements.hpp"
+#include "ftxui/dom/node.hpp"
+#include "ftxui/screen/screen.hpp"
+#include "ftxui/screen/color.hpp"
 #include <thread>
 #include <iostream>
 
-inline std::pair<lab::AudioStreamConfig, lab::AudioStreamConfig> GetDefaultAudioDeviceConfiguration(const bool with_input = true)
+std::pair<lab::AudioStreamConfig, lab::AudioStreamConfig> GetDefaultAudioDeviceConfiguration(const bool with_input = true);
+
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        printf("No input file.");
+        return EXIT_FAILURE;
+    }
+
+    log_set_level(LOGLEVEL_ERROR);
+    const auto defaultAudioDeviceConfigurations = GetDefaultAudioDeviceConfiguration();
+    auto context = lab::MakeRealtimeAudioContext(defaultAudioDeviceConfigurations.second, defaultAudioDeviceConfigurations.first);
+    lab::AudioContext& ac = *context.get();
+
+    auto audioClipBus = lab::MakeBusFromFile(argv[1], false);
+    auto audioClipNode = std::make_shared<lab::SampledAudioNode>(ac);
+    {
+        lab::ContextRenderLock r(context.get(), "audioNode setBus");
+        audioClipNode->setBus(r, audioClipBus);
+    }
+
+    auto analyserNode = std::make_shared<lab::AnalyserNode>(ac);
+    {
+        lab::ContextRenderLock r(context.get(), "analyserNode setFftSize");
+        analyserNode->setFftSize(r, 2048);
+    }
+
+    // osc -> analyser -> destination
+    context->connect(analyserNode, audioClipNode, 0, 0);
+    context->connect(context->device(), analyserNode, 0, 0);
+
+    audioClipNode->schedule(0.0);
+
+    auto bufferLength = analyserNode->frequencyBinCount();
+    std::vector<uint8_t> wave(1024);
+    while (true) {
+        analyserNode->getByteTimeDomainData(wave);
+        for (int i = 0; i < bufferLength; i++) {
+            std::cout << (wave[i] / 128.0f);
+        }
+        std::cout << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds (33));
+    }
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    std::cout << "Press any key to stop play!" << std::endl;
+    getchar();
+
+    return 0;
+}
+
+inline std::pair<lab::AudioStreamConfig, lab::AudioStreamConfig> GetDefaultAudioDeviceConfiguration(const bool with_input)
 {
     lab::AudioStreamConfig inputConfig;
     lab::AudioStreamConfig outputConfig;
@@ -47,31 +104,4 @@ inline std::pair<lab::AudioStreamConfig, lab::AudioStreamConfig> GetDefaultAudio
         printf("Warning ~ input and output sample rates don't match, attempting to set minimum");
     }
     return {inputConfig, outputConfig};
-}
-
-int main() {
-    std::cout << "Hello, World!" << std::endl;
-
-    const auto defaultAudioDeviceConfigurations = GetDefaultAudioDeviceConfiguration();
-    auto context = lab::MakeRealtimeAudioContext(defaultAudioDeviceConfigurations.second, defaultAudioDeviceConfigurations.first);
-    lab::AudioContext& ac = *context.get();
-
-    auto oscillator = std::make_shared<lab::OscillatorNode>(ac);
-    auto gain = std::make_shared<lab::GainNode>(ac);
-    gain->gain()->setValue(0.0625);
-
-    // osc -> gain -> destination
-    context->connect(gain, oscillator, 0, 0);
-    context->connect(context->device(), gain, 0, 0);
-
-    oscillator->frequency()->setValue(440.0f);
-    oscillator->setType(lab::OscillatorType::SINE);
-    oscillator->start(0.0f);
-
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-
-    std::cout << "Press any key to stop play!" << std::endl;
-    getchar();
-
-    return 0;
 }
