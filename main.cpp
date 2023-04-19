@@ -26,7 +26,8 @@ int main(int argc, char** argv) {
     }
     sndfileName = argv[1];
 
-    VisualizerMode curremtMode = VisualizerMode::WAVEFORM_OSCILLOSCOPE;
+//    VisualizerMode curremtMode = VisualizerMode::WAVEFORM_OSCILLOSCOPE;
+    VisualizerMode curremtMode = VisualizerMode::FREQUENCY_BAR_GRAPH;
 
     log_set_level(LOGLEVEL_ERROR);
     const auto defaultAudioDeviceConfigurations = GetDefaultAudioDeviceConfiguration();
@@ -52,44 +53,54 @@ int main(int argc, char** argv) {
 
     audioClipNode->schedule(0.0);
 
-    auto bufferLength = analyserNode->frequencyBinCount();
-    std::vector<uint8_t> wave(1024);
-
+    int bufferLength = analyserNode->frequencyBinCount();
+    std::vector<uint8_t> wave(bufferLength);
 
     // main UI loop
     using namespace ftxui;
-    const int CanvesWidth = 200;
-    const int CanvesHeight = 50;
+    const int CanvasWidth = 200;
+    const int CanvasHeight = 50;
 
     auto board_renderer = CatchEvent(Renderer([&] {
-        auto c = Canvas(CanvesWidth, CanvesHeight);
+        auto c = Canvas(CanvasWidth, CanvasHeight);
 
         c.DrawText(0, 0, sndfileName, [](Pixel& p) {
             p.foreground_color = Color::Red;
             p.underlined = true;
         });
 
-
         if (curremtMode == VisualizerMode::WAVEFORM_OSCILLOSCOPE)
         {
-            const float sliceWidth = CanvesWidth / (float)bufferLength;
+            const float sliceWidth = CanvasWidth / (float)bufferLength;
             analyserNode->getByteTimeDomainData(wave);
 
             int x1 = 0;
-            int y1 = CanvesHeight / 2;
+            int y1 = CanvasHeight / 2;
             int x2 = x1 + sliceWidth;
-            int y2 = (wave[0] / 128.0f) * (CanvesHeight / 2);
+            int y2 = (wave[0] / 128.0f) * (CanvasHeight / 2);
             c.DrawPointLine(x1, y1, x2, y2, Color::Green);
             for (int i = 1; i < bufferLength; i++) {
                 x1 = x2;
                 y1 = y2;
                 x2 = i * sliceWidth;
-                y2 = (wave[i] / 128.0f) * (CanvesHeight / 2);
+                y2 = (wave[i] / 128.0f) * (CanvasHeight / 2);
                 c.DrawPointLine(x1, y1, x2, y2, Color::Green);
             }
         }
 
+        if (curremtMode == VisualizerMode::FREQUENCY_BAR_GRAPH) {
+            const float sliceWidth = CanvasWidth / (float)bufferLength;
+            analyserNode->getByteFrequencyData(wave);
 
+            int x1, y1, x2, y2;
+            for (int i = 0; i < bufferLength - 1; i += 2) {
+                x1 = x2 = i * sliceWidth;
+                y1 = CanvasHeight;
+                y2 = (wave[i] / 128.0f) * (CanvasHeight / 2);
+                y2 = CanvasHeight - y2;
+                c.DrawBlockLine(x1, y1, x2, y2, Color((100 + y2), 50, 50));
+            }
+        }
 
         return window(text("Audio Visualizer"), canvas(c));
     }), [&](const Event &e) {
@@ -109,6 +120,27 @@ int main(int argc, char** argv) {
             }
             curremtMode = (VisualizerMode)curmode;
         }
+
+
+        if (curremtMode == VisualizerMode::WAVEFORM_OSCILLOSCOPE)
+        {
+            {
+                lab::ContextRenderLock r(context.get(), "analyserNode setFftSize");
+                analyserNode->setFftSize(r, 2048);
+            }
+            bufferLength = analyserNode->frequencyBinCount();
+            wave.reserve(bufferLength);
+        }
+        else if (curremtMode == VisualizerMode::FREQUENCY_BAR_GRAPH)
+        {
+            {
+                lab::ContextRenderLock r(context.get(), "analyserNode setFftSize");
+                analyserNode->setFftSize(r, 256);
+            }
+            bufferLength = analyserNode->frequencyBinCount();
+            wave.reserve(bufferLength);
+        }
+
         return false;
     });
 
@@ -124,20 +156,6 @@ int main(int argc, char** argv) {
     screen.Loop(board_renderer);
     refresh_ui_continue = false;
     refresh_ui.join();
-
-    //    while (true) {
-//        analyserNode->getByteTimeDomainData(wave);
-//        for (int i = 0; i < bufferLength; i++) {
-//            std::cout << (wave[i] / 128.0f);
-//        }
-//        std::cout << std::endl;
-//        std::this_thread::sleep_for(std::chrono::milliseconds (33));
-//    }
-//
-//    std::this_thread::sleep_for(std::chrono::seconds(1));
-//
-//    std::cout << "Press any key to stop play!" << std::endl;
-//    getchar();
 
     return 0;
 }
