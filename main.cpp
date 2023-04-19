@@ -71,6 +71,11 @@ int main(int argc, char** argv) {
 
         if (curremtMode == VisualizerMode::WAVEFORM_OSCILLOSCOPE)
         {
+            c.DrawText(180, 0, "waveform", [](Pixel& p) {
+                p.foreground_color = Color::Blue;
+                p.underlined = true;
+            });
+
             const float sliceWidth = CanvasWidth / (float)bufferLength;
             analyserNode->getByteTimeDomainData(wave);
 
@@ -89,6 +94,11 @@ int main(int argc, char** argv) {
         }
 
         if (curremtMode == VisualizerMode::FREQUENCY_BAR_GRAPH) {
+            c.DrawText(180, 0, "frequency", [](Pixel& p) {
+                p.foreground_color = Color::Blue;
+                p.underlined = true;
+            });
+
             const float sliceWidth = CanvasWidth / (float)bufferLength;
             analyserNode->getByteFrequencyData(wave);
 

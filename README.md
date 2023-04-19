@@ -1,6 +1,12 @@
 # audiovis-cli
+
 Audio visualizer in command line
 
+# screenshots
+
+![frequency bar](screenshots/Snipaste_2023-04-19_23-37-33.png)
+
+![wave](screenshots/Snipaste_2023-04-19_23-37-40.png)
 
 # Inspiration
 
