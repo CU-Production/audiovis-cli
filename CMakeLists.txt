@@ -13,8 +13,22 @@ option(FTXUI_ENABLE_INSTALL OFF)
 add_subdirectory(3rd_party/FTXUI)
 
 add_executable(audiovis_cli main.cpp)
-target_link_libraries(audiovis_cli PRIVATE
-        ftxui::screen
-        ftxui::dom
-        ftxui::component
-        LabSound)
+
+if(CMAKE_HOST_APPLE)
+        target_link_libraries(audiovis_cli PRIVATE
+                ftxui::screen
+                ftxui::dom
+                ftxui::component
+                LabSound
+                "-framework CoreFoundation"
+                "-framework CoreAudio"
+                "-framework Accelerate"
+        )
+else()
+        target_link_libraries(audiovis_cli PRIVATE
+                ftxui::screen
+                ftxui::dom
+                ftxui::component
+                LabSound
+        )
+endif()
